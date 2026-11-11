@@ -20,11 +20,22 @@ function fetchUrl(url) {
 }
 
 // ─── Yahoo Finance: price history (1y daily OHLCV) ─────────────────
+function normaliseSymbol(sym) {
+  sym = (sym || '').toUpperCase().trim();
+  if (/\.(?:AX|NZ|UK|US)$/i.test(sym)) return sym;
+  // ASX tickers are short letters + no exchange suffix
+  const asxCandidates = ['BHP','CBA','WES','RIO','NAB','ANZ','WBC','TLS','FMG','WDS','COL','STO','QBE','TCL','S32','MTS','MDT','GMG','CSL','WOW','ORG','REA','TNE','SCG','CPU','XRO','LYC','SGP','MIN','HVN','SUL','AVZ','NXE'];
+  if (asxCandidates.includes(sym)) return sym + '.AX';
+  return sym;
+}
+
 async function getPrices(symbol) {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=1y&interval=1d`;
+  const norm = normaliseSymbol(symbol);
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${norm}?range=1y&interval=1d`;
   const { body } = await fetchUrl(url);
   const j = JSON.parse(body);
-  const r = j.chart.result[0];
+  const r = j.chart?.result?.[0];
+  if (!r) throw new Error('No price data for ' + symbol);
   const ts = r.timestamp;
   const oc = r.indicators.quote[0];
   const meta = r.meta;
@@ -35,7 +46,7 @@ async function getPrices(symbol) {
       open: oc.open[i], high: oc.high[i], low: oc.low[i], close: oc.close[i], volume: oc.volume[i]
     });
   }
-  return { symbol, meta, prices };
+  return { symbol: norm, meta, prices, originalSymbol: symbol };
 }
 
 // ─── Technical indicators ───────────────────────────────────────────
