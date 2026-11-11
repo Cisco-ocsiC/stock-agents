@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Stock Agents</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:system-ui,sans-serif;background:#0f1419;color:#e0e6ed;min-height:100vh}
+.wrap{max-width:960px;margin:0 auto;padding:24px 16px}
+h1{font-size:22px;margin-bottom:20px;color:#e2e8f0}
+h2{font-size:13px;font-weight:600;color:#9ca3af;text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px}
+.card{background:#1a2028;border-radius:10px;padding:20px;border:1px solid #2d3748;margin-bottom:16px}
+.input-row{display:flex;gap:8px;margin-bottom:16px}
+.input-row input{flex:1;padding:10px 12px;background:#0f1419;border:1px solid #2d3748;border-radius:6px;color:#e0e6ed;font-size:15px}
+.input-row input:focus{outline:none;border-color:#7c3aed}
+.btn{padding:10px 18px;background:#7c3aed;color:white;border:none;border-radius:6px;font-size:14px;cursor:pointer}
+.btn:hover{background:#6d28d9}.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn.secondary{background:#2d3748}.btn.secondary:hover{background:#374151}
+.tag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600}
+.tag.buy{background:#065f46;color:#4ade80}.tag.hold{background:#92400e;color:#fbbf24}
+.tag.sell{background:#7f1d1d;color:#f87171}
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:16px}
+.stat{background:#1a2028;border:1px solid #2d3748;border-radius:8px;padding:14px 16px}
+.stat .num{font-size:24px;font-weight:700;color:#7c3aed}
+.stat .lbl{font-size:11px;color:#6b7280;margin-top:4px}
+table{width:100%;border-collapse:collapse;margin-top:10px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid #2d3748;font-size:13px}
+th{color:#6b7280;font-weight:500;font-size:12px;text-transform:uppercase}
+td{color:#9ca3af}
+.result-card{border-left:3px solid #7c3aed;padding-left:16px;margin-bottom:20px}
+.loading{text-align:center;padding:40px;color:#6b7280}
+.err{color:#f87171;padding:16px;background:#1c1017;border-radius:8px}
+.ok-msg{color:#4ade80;font-size:13px}
+.meta{font-size:12px;color:#4b5563;margin-top:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Stock Agents Pipeline</h1>
+  <div class="input-row">
+    <input id="tickerInput" type="text" placeholder="Enter ticker (e.g. AAPL, BHP.AX, MSFT)" autocomplete="off">
+    <button class="btn" id="runBtn" onclick="runAnalysis()">Analyze</button>
+    <button class="btn secondary" onclick="screenAll()">Screen All</button>
+  </div>
+  <div id="status"></div>
+  <div id="output"></div>
+</div>
+<script>
+const API='http://localhost:8766/api';
+document.getElementById('tickerInput').addEventListener('keydown',e=>{if(e.key==='Enter')runAnalysis()});
+
+async function runAnalysis(){
+  const sym=document.getElementById('tickerInput').value.trim().toUpperCase();
+  if(!sym){alert('Please enter a ticker');return}
+  setUI('loading','Analyzing '+sym+'...');
+  try{
+    const r=await fetch(API+'/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:sym})}).then(x=>x.json());
+    if(r.error){setUI('err',r.error);return}
+    renderVerdict(r.verdict,r.ticker,r.note);
+  }catch(e){setUI('err','Request failed: '+e.message)}
+}
+
+async function screenAll(){
+  setUI('loading','Screening universe...');
+  try{
+    const r=await fetch(API+'/screen').then(x=>x.json());
+    if(r.error){setUI('err',r.error);return}
+    let html='<h2>Screener Results ('+r.candidates.length+' candidates)</h2><table><thead><tr><th>Symbol</th><th>Name</th><th>Score</th><th>Rationale</th></tr></thead><tbody>';
+    r.candidates.forEach(c=>{html+=`<tr><td><strong>${c.symbol}</strong></td><td>${c.name.slice(0,30)}</td><td>${c.score}</td><td style="color:#6b7280">${c.rationale}</td></tr>`});
+    html+='</tbody></table><p class="meta">Run "Analyze" on any row above for full TP/SL breakdown.</p>';
+    document.getElementById('output').innerHTML=html;
+    document.getElementById('status').innerHTML='<span class="ok-msg">Done.</span>';
+  }catch(e){setUI('err',e.message)}
+}
+
+function renderVerdict(v,ticker,note){
+  const recClass=v.recommendation==='buy'||v.recommendation==='accumulate'?'buy':v.recommendation==='sell'||v.recommendation==='underweight'?'sell':'hold';
+  let html=`<div class="result-card">
+    <h2>${ticker}</h2>
+    <div class="stat-grid">
+      <div class="stat"><div class="num">${v.recommendation.toUpperCase()}</div><div class="lbl">Recommendation</div></div>
+      <div class="stat"><div class="num">${v.compositeScore}</div><div class="lbl">Composite Score</div></div>
+      <div class="stat"><div class="num">$${v.entryPrice.toFixed(2)}</div><div class="lbl">Entry Price</div></div>
+      <div class="stat"><div class="num">$${v.tp1.toFixed(2)}</div><div class="lbl">TP1 (+${((v.tp1/v.entryPrice-1)*100).toFixed(1)}%)</div></div>
+      <div class="stat"><div class="num">$${v.tp2.toFixed(2)}</div><div class="lbl">TP2 (+${((v.tp2/v.entryPrice-1)*100).toFixed(1)}%)</div></div>
+      <div class="stat"><div class="num">$${v.sl.toFixed(2)}</div><div class="lbl">Stop Loss (-${((1-v.sl/v.entryPrice)*100).toFixed(1)}%)</div></div>
+      <div class="stat"><div class="num">${v.riskRewardRatio}</div><div class="lbl">Risk/Reward</div></div>
+      <div class="stat"><div class="num">${v.confidence}</div><div class="lbl">Confidence</div></div>
+    </div>
+    <p><strong>Bull Case:</strong> ${v.bullCase||'—'}</p>
+    <p style="margin-top:8px"><strong>Bear Case:</strong> ${v.bearCase||'—'}</p>
+    <p style="margin-top:8px"><strong>Key Risks:</strong> ${(v.keyRisks||[]).slice(0,3).join(' | ')||'—'}</p>
+    <p class="meta">${v.timeHorizon}${note?' | '+note:''}</p>
+  </div>`;
+  document.getElementById('output').innerHTML=html;
+  document.getElementById('status').innerHTML='<span class="ok-msg">Analysis complete for '+ticker+'</span>';
+}
+
+function setUI(state,msg){
+  const s=document.getElementById('status'),o=document.getElementById('output'),b=document.getElementById('runBtn');
+  b.disabled=state==='loading';
+  if(state==='loading'){s.innerHTML='<div class="loading">'+msg+'</div>';o.innerHTML=''}
+  else if(state==='err'){s.innerHTML='<div class="err">'+msg+'</div>'}
+  else{s.innerHTML=''}
+}
+</script>
+</body>
+</html>
